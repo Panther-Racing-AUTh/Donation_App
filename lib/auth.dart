@@ -1,7 +1,11 @@
 
 // Sign In Page
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:donation_app_v1/const_values/title_values.dart';
+import 'package:donation_app_v1/models/profile_model.dart';
+import 'package:donation_app_v1/providers/provider.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -92,6 +96,7 @@ class _SignInPageState extends State<SignInPage> {
 
       if (response.user != null) {
         _showMessage('Sign In Successful');
+        await _fetchProfile();
         Navigator.pushReplacementNamed(context, '/donation');
       }
     } on AuthException catch (e) {
@@ -104,6 +109,32 @@ class _SignInPageState extends State<SignInPage> {
       });
     }
   }
+  Future<void> _fetchProfile() async {
+    ProfileProvider profileProvider=Provider.of<ProfileProvider>(context,listen: false);
+    try {
+      final response = await _supabaseClient
+          .from('profiles')
+          .select()
+          .eq('username', _supabaseClient.auth.currentUser!.userMetadata!['username']);
+
+      if (response.isNotEmpty) {
+        print(response);
+        setState(() {
+          profileProvider.updateProfile(Profile.fromJson(response.first));
+          // Remove the unnecessary print statement if not needed
+          // print(profile);
+        });
+      } else {
+        _showMessage('No profile found for the current user.');
+      }
+
+    } catch (e) {
+      print('Error fetching profile: $e');
+      _showMessage('An error occurred while fetching your profile. Please try again later.');
+    }
+
+  }
+
   Future<bool> checkSignedIn() async {
     try {
       // Retrieve the current session
@@ -112,6 +143,7 @@ class _SignInPageState extends State<SignInPage> {
       // Check if a session exists
       if (session != null) {
         print("User is signed in: ${session.user.email}");
+        await _fetchProfile();
         Navigator.pushReplacementNamed(context, '/donation');
         return true;
       } else {
@@ -138,67 +170,124 @@ class _SignInPageState extends State<SignInPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign In'),
+        centerTitle: true,
         backgroundColor: Colors.teal,
+        elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Internet Status Indicator with Persistent UI Feedback
-            if (!_isOnline)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: const [
-                    Icon(Icons.wifi_off, color: Colors.red),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'No Internet Connection. Please check your connection.',
-                        style: TextStyle(color: Colors.red, fontSize: 14),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.tealAccent.shade400, Colors.teal.shade900],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Card(
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!_isOnline)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.wifi_off, color: Colors.red),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'No Internet Connection. Please check your connection.',
+                              style: TextStyle(color: Colors.red, fontSize: 14),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _emailController,
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      labelStyle: TextStyle(color: Colors.teal.shade800),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800, width: 2.0),
+                      ),
+                      fillColor: Colors.white,
+                      filled: true,
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      labelStyle: TextStyle(color: Colors.teal.shade800),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800, width: 2.0),
+                      ),
+                      fillColor: Colors.white,
+                      filled: true,
+                    ),
+                    obscureText: true,
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        backgroundColor: Colors.grey.shade300,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _isLoading ? null : _isOnline ? _signIn : null,
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text('Sign In', style: TextStyle(fontSize: 16)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacementNamed(context, '/signUp');
+                    },
+                    child: const Text("Don't have an account? Register"),
+                  ),
+                ],
               ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.emailAddress,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _isOnline ? _signIn : null,
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Sign In'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pushReplacementNamed(context, '/signUp');
-              },
-              child: const Text("Don't have an account? Register"),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -284,6 +373,18 @@ class _SignUpPageState extends State<SignUpPage> {
           password: password,
           data: {'username': username},
         );
+        final response1 = await _supabaseClient.from('profiles').insert({
+          'username': username,
+          'wallet' : 0,
+          'payment_cards' : [],
+          'image_url' : '',
+          'settings' : {
+            "theme": "dark",
+            "language": "en",
+            "notifications_enabled": false
+          },
+          'created_at': DateTime.now().toIso8601String(),
+        });
         if (response.user != null) {
           _showMessage(
             'Registration Successful. Please check your email for confirmation.',
@@ -320,7 +421,7 @@ class _SignUpPageState extends State<SignUpPage> {
 
     const validDomains = [
       'gmail.com', 'yahoo.com', 'outlook.com', 'example.com',
-      'hotmail.com', 'live.com', 'icloud.com', 'aol.com', 'protonmail.com',
+      'hotmail.com', 'live.com', 'icloud.com', 'aol.com', 'protonmail.com','pantherauth.gr',
       'zoho.com', 'gmx.com', 'yandex.com', 'mail.com', 'me.com', 'fastmail.com',
     ];
 
@@ -350,78 +451,152 @@ class _SignUpPageState extends State<SignUpPage> {
     Future.delayed(const Duration(seconds: 5), () => _connectionCheck());
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Register'),
+        title: const Text('Sign Up'),
+        centerTitle: true,
+        backgroundColor: Colors.teal,
+        elevation: 0,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (!_isOnline)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: const [
-                    Icon(Icons.wifi_off, color: Colors.red),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'No Internet Connection. Please check your connection.',
-                        style: TextStyle(color: Colors.red, fontSize: 14),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.tealAccent.shade400, Colors.teal.shade900],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Card(
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!_isOnline)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.wifi_off, color: Colors.red),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'No Internet Connection. Please check your connection.',
+                              style: TextStyle(color: Colors.red, fontSize: 14),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _usernameController,
+                    decoration: InputDecoration(
+                      labelText: 'Username',
+                      labelStyle: TextStyle(color: Colors.teal.shade800),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800, width: 2.0),
+                      ),
+                      fillColor: Colors.white,
+                      filled: true,
+                    ),
+                    keyboardType: TextInputType.text,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _emailController,
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      labelStyle: TextStyle(color: Colors.teal.shade800),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800, width: 2.0),
+                      ),
+                      fillColor: Colors.white,
+                      filled: true,
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      labelStyle: TextStyle(color: Colors.teal.shade800),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.teal.shade800, width: 2.0),
+                      ),
+                      fillColor: Colors.white,
+                      filled: true,
+                    ),
+                    obscureText: true,
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        backgroundColor: Colors.grey.shade300,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _isLoading ? null : _isOnline ? _signUp : null,
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text('Register', style: TextStyle(fontSize: 16)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacementNamed(context, '/signIn');
+                    },
+                    child: const Text("Do you have an account? Sign in"),
+                  ),
+                ],
               ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _usernameController,
-              decoration: const InputDecoration(
-                labelText: 'Username',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.text,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _isOnline ? _signUp : null,
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Register'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pushReplacementNamed(context, '/signIn');
-              },
-              child: const Text("Do you have an account? Sign in"),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
+
 }
 
