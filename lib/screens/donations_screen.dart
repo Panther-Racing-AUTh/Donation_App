@@ -3,18 +3,30 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:donation_app_v1/const_values/home_page_values.dart';
+import 'package:donation_app_v1/const_values/title_values.dart';
 import 'package:donation_app_v1/enums/card_type_enum.dart';
+import 'package:donation_app_v1/enums/currency_enum.dart';
+import 'package:donation_app_v1/enums/drawer_enum.dart';
+import 'package:donation_app_v1/enums/language_enum.dart';
 import 'package:donation_app_v1/main.dart';
 import 'package:donation_app_v1/models/card_model.dart';
+import 'package:donation_app_v1/models/carousel_card_model.dart';
 import 'package:donation_app_v1/models/profile_model.dart';
+import 'package:donation_app_v1/models/settings_model.dart';
 import 'package:donation_app_v1/notification_functions.dart';
 import 'package:donation_app_v1/providers/provider.dart';
 import 'package:donation_app_v1/screens/donation_card_screen.dart';
 import 'package:donation_app_v1/models/drawer_model.dart';
 import 'package:donation_app_v1/screens/profile_screen.dart';
+import 'package:donation_app_v1/screens/signature_screen.dart';
+import 'package:donation_app_v1/temp/page/pdf_page.dart';
+import 'package:donation_app_v1/widgets/wallet_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
@@ -44,6 +56,7 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
   List<Map<String, dynamic>> _donations = [];
   List<Map<String,dynamic>>  _donators=[];
   List<Map<String, dynamic>> _donationItems = [];
+  List<Map<String,dynamic>> _translations = [];
   List<String> _donation_item_images=[];
   String topDonatorUsername='';
 
@@ -69,9 +82,12 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
     _listenToDonationChanges();
     _listenToDonationItemChanges();
     fetchFileUrls(bucketName: 'myBucket',path: 'image/');
-    ProfileProvider profileProvider=Provider.of<ProfileProvider>(context,listen: false);
+  }
 
-    print("Niaou:::::::::::::::::::::::::::${profileProvider.profile!.username}");
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Safe to call Provider.of or similar context-based functions here
   }
 
   @override
@@ -198,26 +214,40 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
   }
 
   Future<void> _fetchDonationItems() async {
-
     try {
-      _isCarouselCardLoading=true;
+      setState(() {
+        _isCarouselCardLoading = true;
+      });
+
+      // Fetch donation items with translations
       final response = await _supabaseClient
-          .from('donation_items') // Replace 'donations' with your table name
-          .select()
+          .from('donation_items')
+          .select('id, image_path, translation, amount, goal, timer, is_active')
           .order('created_at', ascending: false);
 
-      if (response.isNotEmpty) {
+      if (response != null && response.isNotEmpty) {
         setState(() {
+          // Cast the response to List<Map<String, dynamic>>
           _donationItems = List<Map<String, dynamic>>.from(response);
+
+          // Extract and map translations for easier access
+          _translations = _donationItems.map((item) {
+            return {
+              'id': item['id'],
+              ...Map<String, dynamic>.from(item['translation']), // Ensure correct type
+            };
+          }).toList();
         });
       } else {
-        _showMessage('No donation Items found.');
+        _showMessage('No donation items found.');
       }
-
-      _isCarouselCardLoading=false;
     } catch (e) {
-      _isCarouselCardLoading=false;
       _showMessage('An unexpected error occurred: $e');
+    } finally {
+      // Ensure the loading flag is reset regardless of success or error
+      setState(() {
+        _isCarouselCardLoading = false;
+      });
     }
   }
   Future<void> fetchFileUrls({required String bucketName,String path=''}) async{
@@ -410,7 +440,6 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
     )
         .subscribe();
   }
-
   // Send Notification After 10s
 
 
@@ -583,48 +612,62 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
       return [];
     }
   }
-  List<Map<String, dynamic>> organizeDonationsByName(List<Map<String,dynamic>> donators,List<Map<String, dynamic>> donations) {
-    try {
-      // Organize donations by name
-      final Map<String, int> organizedDonations = {};
-      if(_donators.isNotEmpty){
-        for (var donator in donators) {
-          final String name = donator['username'] as String;
-          final int amount = donator['amount'] as int;
-          organizedDonations[name] = amount;
-          print(organizedDonations);
+    List<Map<String, dynamic>> organizeDonationsByName(List<Map<String,dynamic>> donators,List<Map<String, dynamic>> donations) {
+      try {
+        // Organize donations by name
+        final Map<String, int> organizedDonations = {};
+        if(_donators.isNotEmpty){
+          for (var donator in donators) {
+            final String name = donator['username'] as String;
+            final int amount = donator['amount'] as int;
+            organizedDonations[name] = amount;
+            print(organizedDonations);
+          }
         }
-      }
-
-      for (var donation in donations) {
-        final String name = donation['username'] as String;
-        final int amount = donation['amount'] as int;
-
-        if (organizedDonations.containsKey(name)) {
-          // Add to the total amount if the name already exists
-          organizedDonations[name] = organizedDonations[name]! + amount;
-        } else {
-          // Initialize with the current amount
-          organizedDonations[name] = amount;
+  
+        for (var donation in donations) {
+          final String name = donation['username'] as String;
+          final int amount = donation['amount'] as int;
+  
+          if (organizedDonations.containsKey(name)) {
+            // Add to the total amount if the name already exists
+            organizedDonations[name] = organizedDonations[name]! + amount;
+          } else {
+            // Initialize with the current amount
+            organizedDonations[name] = amount;
+          }
         }
+  
+        // Convert the map to a list
+        final List<Map<String, dynamic>> donationList = organizedDonations.entries.map((entry) {
+          return {
+            'username': entry.key as String,
+            'amount': entry.value as int,
+          };
+        }).toList();
+  
+        return donationList;
+      } catch (e) {
+        print('Error organizing donations: $e');
+        return [];
       }
-
-      // Convert the map to a list
-      final List<Map<String, dynamic>> donationList = organizedDonations.entries.map((entry) {
-        return {
-          'username': entry.key as String,
-          'amount': entry.value as int,
-        };
-      }).toList();
-
-      return donationList;
-    } catch (e) {
-      print('Error organizing donations: $e');
-      return [];
     }
+
+  Future<String?> fetchImageUrlByUsername(String username) async {
+    final response = await _supabaseClient
+        .from('profiles')
+        .select('image_url')
+        .eq('uuid', _supabaseClient.auth.currentUser!.id)
+        .single();
+
+    if (response.isEmpty) {
+      print('Error fetching image URL: ${response}');
+      return null;
+    }
+
+    // Assuming response.data is a Map<String, dynamic> containing the image_url
+    return response['image_url'] as String?;
   }
-
-
 
   /// Show a message using a Snackbar
   void _showMessage(String message) {
@@ -633,20 +676,21 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
     );
   }
   String formatAmount(int amount) {
+    final profileProvider= Provider.of<ProfileProvider>(context,listen: false);
+    final currentCurrency = Currency.values.firstWhere((element) => element.code == profileProvider.profile!.settings.currency);
+    final currencyFormat = currentCurrency.format(amount.toDouble());
     if (amount >= 1000000) {
-      double result = double.parse((amount / 1000000).toStringAsFixed(2));
-      // If the result is a whole number, remove the decimal
+      double result = amount / 1000000;
       return result == result.toInt().toDouble()
-          ? '${result.toInt()}M' // No decimal places for whole numbers
-          : '${result.toStringAsFixed(1)}M'; // Otherwise, show one decimal place
+          ? '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency).toInt()}M'
+          : '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency).toInt().toStringAsFixed(1)}M';
     } else if (amount >= 1000) {
       double result = amount / 1000;
-      // If the result is a whole number, remove the decimal
       return result == result.toInt().toDouble()
-          ? '${result.toInt()}k' // No decimal places for whole numbers
-          : '${result.toStringAsFixed(1)}k'; // Otherwise, show one decimal place
+          ? '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency).toInt()}k'
+          : '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency).toInt().toStringAsFixed(1)}k';
     } else {
-      return amount.toString(); // No abbreviation for values < 1000
+      return  "${currentCurrency.symbol} ${currentCurrency.convert(amount.toDouble(),currentCurrency).toInt()}";
     }
   }
 
@@ -712,7 +756,12 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
     });
   }
 
-  Widget buildLeaderboard({required List<Map<String, dynamic>> data,Color cardColor = Colors.white,Color textColor = Colors.black,double height = 300}) {
+  Widget buildLeaderboard({
+    required List<Map<String, dynamic>> data,
+    Color cardColor = Colors.white,
+    Color textColor = Colors.black,
+    double height = 300,
+  }) {
     // Sort the data by amount in descending order
     data.sort((a, b) {
       final amountA = a['amount'] as int;
@@ -722,10 +771,15 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
 
     return Container(
       height: height,
-      margin: EdgeInsets.symmetric(horizontal: 10),
+      margin: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: Colors.teal.shade100.withOpacity(0.5),
+        gradient: LinearGradient(
+          colors: [Colors.teal.shade900, Colors.teal.shade400],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(20),
+
       ),
       child: data.isEmpty
           ? Center(
@@ -737,18 +791,18 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
               size: 48,
               color: Colors.grey.shade600,
             ),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Text(
-              "No data available",
+              DonationLabels.getLabel(getCurrentLanguage(), 'no_data_available'),
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
                 color: Colors.grey.shade700,
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
-              "Be the first to add a score!",
+              DonationLabels.getLabel(getCurrentLanguage(), 'first_to_add_score'),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w400,
@@ -758,151 +812,177 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
           ],
         ),
       )
-          : ClipRRect(
-              borderRadius: BorderRadius.circular(20),
+          :             ClipRRect(
+        borderRadius: BorderRadius.circular(20),
 
-            child: ListView.builder(
-                    padding: EdgeInsets.symmetric(vertical: 6.0, horizontal: 10),
-                    itemCount: data.length,
-                    itemBuilder: (context, index) {
-            final rank = index + 1;
-            final name = data[index]['username'] as String;
-            final score = data[index]['amount'] as int;
+        child: ListView.builder(
+              itemCount: data.length,
+              itemBuilder: (context, index) {
+                final rank = index + 1;
+                final name = data[index]['username'] as String;
+                final score = data[index]['amount'] as int;
 
-            // Styles for the top three ranks
-            BoxDecoration decoration;
-            TextStyle rankStyle;
-            TextStyle nameStyle;
-            TextStyle scoreStyle;
-            Color rankColor;
-            EdgeInsets margin;
 
-            if (rank == 1) {
-              margin=EdgeInsets.symmetric(horizontal: 0.0,vertical: 5);
-              decoration = BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.yellow.shade700, Colors.orange.shade700],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.orange.withOpacity(0.6),
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
+                BoxDecoration decoration;
+                TextStyle rankStyle;
+                TextStyle nameStyle;
+                TextStyle scoreStyle;
+                Color rankColor;
+
+                if (rank == 1) {
+                  decoration = BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.yellow.shade700, Colors.orange.shade700],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.orange.withOpacity(0.6),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  );
+                  rankStyle = const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white);
+                  nameStyle = const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white);
+                  scoreStyle = TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green.shade50);
+                  rankColor = Colors.orange.shade900;
+                } else if (rank == 2) {
+                  decoration = BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.grey.shade500, Colors.grey.shade800],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  );
+                  rankStyle = const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white);
+                  nameStyle = const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white);
+                  scoreStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.green.shade50);
+                  rankColor = Colors.grey.shade700;
+                } else if (rank == 3) {
+                  decoration = BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.brown.shade300, Colors.brown.shade600],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.brown.withOpacity(0.4),
+                        blurRadius: 6,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  );
+                  rankStyle = const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white);
+                  nameStyle = const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white);
+                  scoreStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.green.shade50);
+                  rankColor = Colors.brown.shade600;
+                } else {
+                  decoration = BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  );
+                  rankStyle = const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black);
+                  nameStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: textColor);
+                  scoreStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textColor);
+                  rankColor = Colors.white;
+                }
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 8,horizontal: 8),
+                  elevation: 5,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
-              );
-              rankStyle = TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white);
-              nameStyle = TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white);
-              scoreStyle = TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green.shade50);
-              rankColor = Colors.yellow.shade900;
-            } else if (rank == 2) {
-              margin=EdgeInsets.symmetric(horizontal: 6.0,vertical: 5);
-              decoration = BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.grey.shade500, Colors.grey.shade800],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 6,
-                    offset: Offset(0, 4),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: rankColor,
+                      borderRadius: BorderRadius.circular(12),
+
+                    ),
+                    padding: EdgeInsets.symmetric(vertical: 5),
+                    child: ListTile(
+                      leading: Container(
+                        width: 80,
+                        child: Row(
+                          children: [
+                            Text(
+                              rank.toString(),
+                              style: rankStyle,
+                            ),
+                            SizedBox(
+                              width: 10,
+                            ),
+                            CircleAvatar(
+                              radius: 25,
+                              backgroundColor: Colors.teal.shade300,
+                              backgroundImage: AssetImage('assets/profile_placeholder.png'), // Replace with actual image path
+                            ),
+                          ],
+                        ),
+                      ),
+                      title: Text(
+                        name,
+                        style: nameStyle,
+                      ),
+                      trailing: Text(
+                        "${formatAmount(score)}",
+                        style: scoreStyle,
+                      ),
+                    ),
                   ),
-                ],
-              );
-              rankStyle = TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white);
-              nameStyle = TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white);
-              scoreStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.green.shade50);
-              rankColor = Colors.grey.shade700;
-            } else if (rank == 3) {
-              margin=EdgeInsets.symmetric(horizontal: 10.0,vertical: 5);
-              decoration = BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.brown.shade300, Colors.brown.shade600],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.brown.withOpacity(0.4),
-                    blurRadius: 6,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              );
-              rankStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white);
-              nameStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white);
-              scoreStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.green.shade50);
-              rankColor = Colors.brown.shade600;
-            } else {
-              margin=EdgeInsets.symmetric(horizontal: 15.0,vertical: 5);
-              decoration = BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              );
-              rankStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor);
-              nameStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: textColor);
-              scoreStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: textColor);
-              rankColor = Colors.blue;
-            }
-            return Container(
-              margin: margin,
-              decoration: decoration,
-              child: ListTile(
-                contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                leading: CircleAvatar(
-                  backgroundColor: rankColor,
-                  radius: 20,
-                  child: Text(
-                    rank.toString(),
-                    style: rankStyle,
-                  ),
-                ),
-                title: Text(
-                  name,
-                  style: nameStyle,
-                ),
-                trailing: Text(
-                  "\$ ${formatAmount(score)}",
-                  style: scoreStyle,
-                ),
-              ),
-            );
-                    },
-                  ),
+                );
+              },
+            ),
           ),
+
     );
   }
-  Widget buildDonationCarousel({double height=200}) {
-    if(_isCarouselCardLoading){
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
+
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
+
+  Widget buildDonationCarousel({double height = 200}) {
+    if (_isCarouselCardLoading) {
       return Container(
         height: height,
         child: Center(
-          child: CircularProgressIndicator(
-          ),
+          child: CircularProgressIndicator(),
         ),
       );
-    }else{
+    } else {
       if (_donationItems.isEmpty) {
         // Handle empty list
         return Container(
           height: height,
-          child: const Center(
+          child: Center(
             child: Text(
-              'No donation items available.',
+              DonationLabels.getLabel(getCurrentLanguage(), 'no_donation_items'),
               style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
           ),
@@ -912,6 +992,7 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
       if (_donationItems.length == 1) {
         // Handle single item
         final item = _donationItems[0];
+        final translationItem = _translations[0];
         return SizedBox(
           height: height, // Match the height of the carousel
           child: Padding(
@@ -919,10 +1000,10 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
             child: CarouselCard(
               id: item['id'] ?? -1,
               imagePath: item['image_path'] ?? 'assets/default.jpg',
-              title: item['title'] ?? 'Donation Item',
+              title: translationItem[getCurrentLanguage()]['title'],
               amount: item['amount'] ?? 0,
-              goal:  item['goal'] ?? 0,
-              description: item['description'] ?? '',
+              goal: item['goal'] ?? 0,
+              description: translationItem[getCurrentLanguage()]['description'],
               statisticsData: aggregateSingleDonationItemFromDonations(_donations, item['id']),
               timerDuration: item['timer'] ?? '00:00:00',
               isActive: item['is_active'] ?? false,
@@ -934,11 +1015,11 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
       // Handle multiple items
       return CarouselSlider(
         options: CarouselOptions(
-            height: height,
-            autoPlay: true,
-            enlargeCenterPage: true,
-            enableInfiniteScroll: false,
-            pauseAutoPlayOnTouch: true
+          height: height,
+          autoPlay: true,
+          enlargeCenterPage: true,
+          enableInfiniteScroll: false,
+          pauseAutoPlayOnTouch: true,
         ),
         items: List.generate(
           _donationItems.length,
@@ -947,11 +1028,11 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
             return CarouselCard(
               id: item['id'] ?? -1,
               imagePath: item['image_path'] ?? 'assets/default.jpg',
-              title: item['title'] ?? 'Donation Item',
+              title: _translations[index][getCurrentLanguage()]['title'],
               amount: item['amount'] ?? 0,
-              goal:  item['goal'] ?? 0,
-              description: item['description'] ?? '',
-              statisticsData:  aggregateSingleDonationItemFromDonations(_donations, item['id']),
+              goal: item['goal'] ?? 0,
+              description: _translations[index][getCurrentLanguage()]['description'],
+              statisticsData: aggregateSingleDonationItemFromDonations(_donations, item['id']),
               timerDuration: item['timer'] ?? '00:00:00',
               isActive: item['is_active'] ?? false,
             );
@@ -960,6 +1041,30 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
       );
     }
   }
+
+// Helper method for translations
+  String _getTranslation(Map<String, dynamic> item, String key) {
+    try {
+      // Ensure translation exists and handle language-specific fetching
+      final translation = item['translation'];
+      final currentLanguage = getCurrentLanguage().toString();  // Ensure this is the current language
+
+      // Check if translation for the current language exists
+      if (translation != null && translation.containsKey(currentLanguage)) {
+        final langData = translation[currentLanguage];
+        if (langData != null && langData.containsKey(key)) {
+          return langData[key] ?? '';  // Return the translation or empty string if key is missing
+        }
+      }
+      // Fallback if translation or key is not found
+      return 'Translation not available';
+    } catch (e) {
+      // Handle any errors gracefully and return fallback message
+      print("Error fetching translation for $key: $e");
+      return 'Translation not available';
+    }
+  }
+
   Widget _sectionHeader(String title, IconData icon,{double fontSize=22}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -979,6 +1084,79 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
       ),
     );
   }
+  Future<void> removePaymentCard(PaymentCard cardToRemove) async {
+    ProfileProvider profileProvider = Provider.of<ProfileProvider>(context, listen: false);
+    try {
+      // Get the current user
+      final user = _supabaseClient.auth.currentUser;
+      if (user == null) {
+        throw Exception("User not authenticated.");
+      }
+
+      // Remove the card from the profile provider's payment cards list
+      profileProvider.profile!.paymentCards.removeWhere(
+            (card) => card.cardNumber == cardToRemove.cardNumber &&
+            card.expirationDate == cardToRemove.expirationDate &&
+            card.uuid == cardToRemove.uuid,
+      );
+
+      // Get the updated list of cards
+      List<dynamic> updatedCards = convertCardsToJson(profileProvider.profile!.paymentCards) ?? [];
+
+      // Update the database with the new list of cards
+      await _supabaseClient
+          .from('profiles')
+          .update({'payment_cards': updatedCards})
+          .eq('username', user.userMetadata?['username']);
+
+      _showMessage("Card removed successfully!");
+    } catch (e) {
+      print("Error removing card: $e");
+      _showMessage("Failed to remove card. Please try again.");
+    }
+  }
+
+  Future<void> addPaymentCard(PaymentCard newCard) async {
+    ProfileProvider profileProvider=Provider.of<ProfileProvider>(context,listen: false);
+    try {
+      // Get the current user
+      final user = _supabaseClient.auth.currentUser;
+      if (user == null) {
+        throw Exception("User not authenticated.");
+      }
+      profileProvider.profile!.paymentCards.add(newCard);
+
+      // Get the existing cards or initialize an empty list
+      List<dynamic> existingCards = convertCardsToJson(profileProvider.profile!.paymentCards) ?? [];
+
+
+      // Update the profile with the new list of cards
+      await _supabaseClient
+          .from('profiles')
+          .update({'payment_cards': existingCards})
+          .eq('username', user.userMetadata?['username']);
+
+      _showMessage("Card added successfully!");
+    } catch (e) {
+      print("Error adding card: $e");
+      _showMessage("Failed to add card. Please try again.");
+    }
+  }
+  void _addCard() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AddCardDialog(
+          onSave: (cardData) {
+            setState(() {
+              addPaymentCard(cardData);
+            });
+          },
+        );
+      },
+    );
+  }
+
   void _showAddDonationDialog() {
     ProfileProvider profileProvider=Provider.of<ProfileProvider>(context,listen: false);
 
@@ -993,29 +1171,29 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
         builder: (context) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text(
-              'No Payment Methods',
+            title: Text(
+              DonationLabels.getLabel(getCurrentLanguage(), 'no_payment_method_title_value'),
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
             ),
-            content: const Text('You have no payment methods saved. Please add a card to proceed with a donation.'),
+            content: Text(DonationLabels.getLabel(getCurrentLanguage(), 'no_payment_method_description_value')),
             actions: [
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
-                child: const Text('Cancel', style: TextStyle(color: Colors.red)),
+                child: Text(DonationLabels.getLabel(getCurrentLanguage(), 'cancel_button'), style: TextStyle(color: Colors.red)),
               ),
               ElevatedButton(
                 onPressed: () {
                   Navigator.of(context).pop();
                   // Navigate to the add card screen or show the add card dialog here.
-                  _showAddCardDialog(); // Implement this function to allow users to add a card.
+                  _addCard();
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Add Card', style: TextStyle(fontSize: 16)),
+                child: Text(DonationLabels.getLabel(getCurrentLanguage(), 'add_card_button'), style: TextStyle(fontSize: 16)),
               ),
             ],
           );
@@ -1037,9 +1215,10 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
+              contentPadding: EdgeInsets.all(12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text(
-                'Make a Donation',
+              title: Text(
+                DonationLabels.getLabel(getCurrentLanguage(), 'make_a_donation_value'),
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
               ),
               content: SingleChildScrollView(
@@ -1047,56 +1226,29 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Predefined Amount Buttons
-                    Wrap(
-                      spacing: 10.0,
-                      runSpacing: 8.0,
-                      children: [100, 500, 1000, 10000, 100000].map((amount) {
-                        return ChoiceChip(
-                          label: Text("\$${formatAmount(amount)}"),
-                          selected: selectedPredefinedAmount == amount,
-                          onSelected: (selected) {
-                            setState(() {
-                              selectedPredefinedAmount = selected ? amount : null;
-                              _amountController.clear();
-                            });
-                          },
-                          selectedColor: Colors.teal,
-                          backgroundColor: Colors.grey[200],
-                          labelStyle: TextStyle(
-                            color: selectedPredefinedAmount == amount ? Colors.white : Colors.black,
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 16),
-                    // Custom Amount Input
-                    TextField(
-                      controller: _amountController,
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) {
-                        setState(() {
-                          selectedPredefinedAmount = null;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Enter Custom Amount',
-                        prefixIcon: Icon(Icons.attach_money, color: Colors.teal),
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Category Dropdown
+// Predefined Amount Buttons
+                    // Predefined Amount Buttons with Custom Option
+                     // Category Dropdown
                     DropdownButtonFormField<Map<String, dynamic>>(
                       borderRadius: BorderRadius.circular(20),
                       value: selectedCategory,
-                      items: _donationItems.map((category) {
+                      items: _donationItems.where((category1) => category1['is_active'] == true).map((category) {
+                        // Add null checks to avoid accessing null values
+                        final translation = category['translation'];
+                        final currentLanguage = getCurrentLanguage();
+
+                        // Check if translation and currentLanguage are not null
+                        String title = translation?[currentLanguage]?['title'] ?? 'No Title'; // Default fallback
+
                         return DropdownMenuItem(
                           value: category,
-                          child: Text(category['title']),
+                          child: Container(
+                            width: 180,
+                            child: Text(
+                              title,
+                              style: TextStyle(overflow: TextOverflow.ellipsis),
+                            ),
+                          ),
                         );
                       }).toList(),
                       onChanged: (value) {
@@ -1105,7 +1257,10 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                         });
                       },
                       decoration: InputDecoration(
-                        labelText: 'Donation Category',
+                        labelText: DonationLabels.getLabel(
+                            getCurrentLanguage(),
+                            'donation_category_hint_value'
+                        ),
                         filled: true,
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
@@ -1119,7 +1274,7 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                       controller: _descriptionController,
                       maxLines: 3,
                       decoration: InputDecoration(
-                        labelText: 'Description (Optional)',
+                        labelText: DonationLabels.getLabel(getCurrentLanguage(), 'description_hint_value'),
                         filled: true,
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
@@ -1137,14 +1292,19 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                         return DropdownMenuItem<PaymentCard>(
                           value: card,
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               card.cardType.getIcon(color: Colors.teal),
                               const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  "**** **** **** ${card.cardNumber.substring(card.cardNumber.length - 4)}",
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 16),
+                              Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                                  child: Text(
+                                    "**** **** **** ${card.cardNumber.substring(card.cardNumber.length - 4)}",
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
                                 ),
                               ),
                             ],
@@ -1157,14 +1317,78 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                         });
                       },
                       decoration: InputDecoration(
-                        labelText: 'Payment Method',
+                        labelText: DonationLabels.getLabel(getCurrentLanguage(), 'payment_method_hint_value'),
                         filled: true,
                         fillColor: Colors.grey[100],
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                    )
+                    ),
+                    const SizedBox(height: 16),
+
+                    Wrap(
+                      spacing: 10.0,
+                      runSpacing: 8.0,
+                      children: [
+                        100,
+                        500,
+                        1000,
+                        10000,
+                        100000,
+                        -1 // Add -1 for the "Custom" choice
+                      ].map((amount) {
+                        return ChoiceChip(
+                          label: Text(amount == -1
+                              ? DonationLabels.getLabel(getCurrentLanguage(), 'custom_amount_label_value') // Label for "Custom"
+                              : "${formatAmount(amount)}"), // Format predefined amounts
+                          selected: selectedPredefinedAmount == amount,
+                          onSelected: (selected) {
+                            setState(() {
+                              if (selected) {
+                                selectedPredefinedAmount = amount;
+                                if (amount == -1) {
+                                  _amountController.clear(); // Clear input for fresh custom entry
+                                }
+                              } else {
+                                selectedPredefinedAmount = null;
+                              }
+                            });
+                          },
+                          selectedColor: Colors.teal,
+                          backgroundColor: Colors.grey[200],
+                          labelStyle: TextStyle(
+                            color: selectedPredefinedAmount == amount ? Colors.white : Colors.black,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+
+// Custom Amount Input (Shown Only for "Custom" Choice)
+                    if (selectedPredefinedAmount == -1)
+                      TextField(
+                        controller: _amountController,
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          setState(() {
+                            if (value.isNotEmpty) {
+                              selectedPredefinedAmount = -1; // Ensure the "Custom" chip remains selected
+                            }
+                          });
+                        },
+                        decoration: InputDecoration(
+                          labelText: DonationLabels.getLabel(getCurrentLanguage(), 'custom_amount_label_value'),
+                          prefixIcon: Icon(Icons.attach_money, color: Colors.teal),
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+
+
                   ],
                 ),
               ),
@@ -1174,24 +1398,30 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                   onPressed: () {
                     Navigator.of(context).pop();
                   },
-                  child: const Text('Cancel', style: TextStyle(color: Colors.red)),
+                  child: Text(DonationLabels.getLabel(getCurrentLanguage(), 'cancel_button'), style: TextStyle(color: Colors.red)),
                 ),
                 // Add Donation Button
                 ElevatedButton(
                   onPressed: () {
-                    final amount = selectedPredefinedAmount ?? int.tryParse(_amountController.text.trim());
-                    if (amount == null || selectedCategory == null || selectedCard == null) {
+                    // Final amount validation
+                    final amount = selectedPredefinedAmount == -1
+                        ? int.tryParse(_amountController.text.trim()) // Use custom input if "Custom" is selected
+                        : selectedPredefinedAmount;
+
+                    if (amount == null || amount <= 0 || selectedCategory == null || selectedCard == null) {
+                      // Show error message if any field is invalid
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Please fill all required fields.'),
+                          content: Text('Please fill all required fields with valid data.'),
                           behavior: SnackBarBehavior.floating,
                         ),
                       );
-                      return;
+                      return; // Stop further execution if fields are invalid
                     }
 
                     final description = _descriptionController.text.trim();
 
+                    // Insert the donation details since validation passed
                     _insertDonation(
                       amount: amount,
                       category: selectedCategory!['id'],
@@ -1199,14 +1429,23 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                       paymentMethod: selectedCard!.toJson(), // Pass the card details as JSON
                     );
 
+                    // Close the dialog after successful donation
                     Navigator.of(context).pop();
+
+                    // Optionally show a success message
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Donation added successfully!'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.teal,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
-                  child: const Text('Donate', style: TextStyle(fontSize: 16)),
+                  child: Text(DonationLabels.getLabel(getCurrentLanguage(), 'donate_button'), style: TextStyle(fontSize: 16)),
                 ),
               ],
             );
@@ -1245,9 +1484,9 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
     Size screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
-      drawer: DonationAppDrawer(topDonatorUsername: topDonatorUsername),
+      drawer: DonationAppDrawer(topDonatorUsername: topDonatorUsername,drawerIndex: DrawerItem.home.index,),
       appBar: AppBar(
-        title: const Text('Donations'),
+        title:  Text(PageTitles.getTitle(getCurrentLanguage(), 'home_page_title'),style: TextStyle(fontWeight: FontWeight.bold),),
         backgroundColor: Colors.teal,
         centerTitle: true,
         actions: [
@@ -1265,7 +1504,9 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                   child:  CircleAvatar(
                     radius: 20,
                     backgroundColor: Colors.teal.shade700,
-                    foregroundImage: _hasImageError ? null : NetworkImage(profileProvider.profile!.imageUrl),
+                    foregroundImage: _hasImageError
+                        ? AssetImage('assets/images/default.png')
+                        : NetworkImage(profileProvider.profile!.imageUrl) as ImageProvider,
                     onForegroundImageError: (exception, stackTrace) {
                       // When error occurs, update state to show fallback text.
                       setState(() {
@@ -1277,10 +1518,12 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                         ? Text(
                       ( _supabaseClient.auth.currentUser!.userMetadata!['username'] ?? "User" )[0].toUpperCase(),
                       style: const TextStyle(
+
                         fontWeight: FontWeight.bold,
-                        fontSize: 30,
+                        fontSize: 25,
                         color: Colors.white,
                       ),
+                      textAlign: TextAlign.center,
                     )
                         : null,
                   )
@@ -1316,7 +1559,7 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                   SizedBox(height: screenSize.height * .015),
 
                   // Leaderboard Section
-                  _sectionHeader('Leaderboard', Icons.leaderboard),
+                  _sectionHeader(DonationLabels.getLabel(getCurrentLanguage(), 'leaderboard_value'), Icons.leaderboard),
                   SizedBox(height: screenSize.height * .01),
                   buildLeaderboard(data: _donators, height: screenSize.height * .39),
 
@@ -1330,6 +1573,7 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                           ? null
                           : () {
                         _showAddDonationDialog();
+                        //Navigator.push(context, MaterialPageRoute(builder: (context) => PdfPage (),));
 
                         print(aggregateDonationByUsername(_donations,_supabaseClient.auth.currentUser!.userMetadata!['username']));
                         print('----------------------------------------');
@@ -1355,8 +1599,8 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                             color: Colors.white,
                           ),
                           const SizedBox(width: 10), // Space between icon and text
-                          const Text(
-                            'Donate Now',
+                          Text(
+                            DonationLabels.getLabel(getCurrentLanguage(), 'donate_now_value'),
                             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
                           ),
                         ],
@@ -1382,8 +1626,8 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
                       color: Colors.redAccent,
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                      'No Internet Connection',
+                    Text(
+                      DonationLabels.getLabel(getCurrentLanguage(), 'no_internet_connection'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -1399,350 +1643,4 @@ class _DonationsPageState extends State<DonationsPage> with WidgetsBindingObserv
     );
   }
 }
-
-
-class CarouselCard extends StatefulWidget {
-  final int id;
-  final String imagePath;
-  final String title;
-  final int amount;
-  final int goal;
-  final String description;
-  final List<Map<String,dynamic>> statisticsData;
-  final String timerDuration;
-  final bool isActive;
-
-  const CarouselCard({
-    Key? key,
-    required this.id,
-    required this.imagePath,
-    required this.title,
-    required this.amount,
-    required this.goal,
-    required this.description,
-    required this.statisticsData,
-    required this.timerDuration,
-    required this.isActive
-  }) : super(key: key);
-
-  @override
-  _CarouselCardState createState() => _CarouselCardState();
-}
-
-class _CarouselCardState extends State<CarouselCard> {
-  late Duration remainingTime;
-  Timer? _timer;
-  late bool _isPaused;
-
-  @override
-  void initState() {
-    super.initState();
-    _isPaused=false;
-    remainingTime = _calculateRemainingDuration(widget.timerDuration);
-    _startTimer();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          if (remainingTime.inSeconds > 0) {
-            remainingTime -= const Duration(seconds: 1);
-          } else {
-            _updateDonationItem(widget.id, {'is_active' : false});
-            timer.cancel();
-          }
-        });
-      }
-    });
-  }
-  void _StartPauseTimer() {
-    if (widget.isActive) {
-      if(_isPaused){
-        setState(() {
-          _isPaused = false;
-        });
-        _startTimer(); // Restart the timer with the remaining duration
-      }else{
-
-      }
-    }else if(!widget.isActive){
-      if(!_isPaused){
-        _timer?.cancel(); // Cancel the current timer
-        setState(() {
-          _isPaused=true;
-        });
-      }else{
-
-      }
-    }
-  }
-
-
-
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-  Future<void> _updateDonationItem(int id,Map<String,dynamic> updatedValues) async {
-
-    try {
-      await _supabaseClient.from('donation_items')
-          .update(updatedValues)
-          .eq('id', id);
-
-    } catch (e) {
-      _showMessage('An unexpected error occurred: $e');
-    } finally {
-
-    }
-  }
-
-  Duration _calculateRemainingDuration(String timestampz) {
-    try {
-      // Parse the timestamp string into a DateTime object
-      final DateTime targetTime = DateTime.parse(timestampz);
-
-      // Get the current time
-      final DateTime now = DateTime.now();
-
-      // Calculate the difference
-      final Duration remainingDuration = targetTime.difference(now);
-
-      // Ensure non-negative duration
-      return remainingDuration.isNegative ? Duration.zero : remainingDuration;
-    } catch (e) {
-      // Handle any parsing errors
-      debugPrint('Error parsing timestampz: $e');
-      return Duration.zero;
-    }
-  }
-
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-
-    final days = duration.inDays;
-    final hours = twoDigits(duration.inHours.remainder(24));
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-
-    if (days > 0) {
-      return '$days days | $hours:$minutes:$seconds';
-    } else {
-      return '$hours:$minutes:$seconds';
-    }
-  }
-
-  String formatAmount(int amount) {
-    if (amount >= 1000000) {
-      double result = double.parse((amount / 1000000).toStringAsFixed(2));
-      // If the result is a whole number, remove the decimal
-      return result == result.toInt().toDouble()
-          ? '${result.toInt()}M' // No decimal places for whole numbers
-          : '${result.toStringAsFixed(1)}M'; // Otherwise, show one decimal place
-    } else if (amount >= 1000) {
-      double result = amount / 1000;
-      // If the result is a whole number, remove the decimal
-      return result == result.toInt().toDouble()
-          ? '${result.toInt()}k' // No decimal places for whole numbers
-          : '${result.toStringAsFixed(1)}k'; // Otherwise, show one decimal place
-    } else {
-      return amount.toString(); // No abbreviation for values < 1000
-    }
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    remainingTime = _calculateRemainingDuration(widget.timerDuration);
-    _StartPauseTimer();
-    return GestureDetector(
-      onTap: !widget.isActive ? null : () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => DonationStatisticsPage(id: widget.id,pic: widget.imagePath,title: widget.title, amountRaised: widget.amount, goal: widget.goal,description: widget.description, statisticsData: widget.statisticsData),));
-      },
-      child: Container(
-        height: 200, // Set a fixed height
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            // Background Image
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  widget.imagePath,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(child: CircularProgressIndicator());
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return Image.asset(
-                      'assets/default.jpg',
-                      fit: BoxFit.cover,
-                    );
-                  },
-                ),
-              ),
-            ),
-
-            // Title Overlay
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                color: Colors.black.withOpacity(0.5),
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    // Display "Active" badge if isActive is true
-                    if (widget.isActive)
-                      if(widget.amount < widget.goal)...[
-                        Row(
-                          children: [
-                            Container(
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 2.0, horizontal: 8.0),
-                              decoration: BoxDecoration(
-                                color: Colors.green,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child:  Text(
-                                "${formatAmount(widget.amount)} \$",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            Icon(Icons.keyboard_double_arrow_right,weight: 50,color: Colors.white,),
-                            Container(
-                              padding:
-                              const EdgeInsets.symmetric(vertical: 2.0, horizontal: 8.0),
-                              decoration: BoxDecoration(
-                                color: Colors.green,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child:  Text(
-                                "${formatAmount(widget.goal)} \$",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      ]else...[
-                        Container(
-                          padding:
-                          const EdgeInsets.symmetric(vertical: 2.0, horizontal: 8.0),
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            borderRadius: BorderRadius.circular(5),
-                          ),
-                          child:  Text(
-                            "${formatAmount(widget.amount)} \$",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ]
-                    // Container(
-                    //   padding:
-                    //   const EdgeInsets.symmetric(vertical: 2.0, horizontal: 8.0),
-                    //   decoration: BoxDecoration(
-                    //     color: Colors.green,
-                    //     borderRadius: BorderRadius.circular(5),
-                    //   ),
-                    //   child: const Text(
-                    //     "Active",
-                    //     style: TextStyle(
-                    //       color: Colors.white,
-                    //       fontSize: 12,
-                    //       fontWeight: FontWeight.bold,
-                    //     ),
-                    //   ),
-                    // ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Timer Positioned on Top Right
-            if(widget.isActive)
-              Positioned(
-                top: 5,
-                right: 5,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    _formatDuration(remainingTime),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-
-            // Dimmed Overlay if isActive is false
-            if (!widget.isActive)
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6), // Dims the entire card
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Center(
-                  child: Text(
-                    "Inactive",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
 

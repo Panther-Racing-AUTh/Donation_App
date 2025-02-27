@@ -1,10 +1,19 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:donation_app_v1/const_values/donation_card_page_values.dart';
+import 'package:donation_app_v1/enums/currency_enum.dart';
+import 'package:donation_app_v1/models/donation_bar_chart_model.dart';
+import 'package:donation_app_v1/models/settings_model.dart';
+import 'package:donation_app_v1/providers/provider.dart';
 import 'package:donation_app_v1/qr_code.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:charts_flutter/flutter.dart' as charts;
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 // import 'package:qr_code_scanner/qr_code_scanner.dart';
 
@@ -16,7 +25,9 @@ class DonationStatisticsPage extends StatefulWidget {
   final int amountRaised;
   final int goal;
   final String description;
+  final String timerDuration;
   final List<Map<String, dynamic>> statisticsData;
+  final bool isActive;
 
   DonationStatisticsPage({
     required this.id,
@@ -26,6 +37,8 @@ class DonationStatisticsPage extends StatefulWidget {
     required this.goal,
     required this.description,
     required this.statisticsData,
+    required this.timerDuration,
+    required this.isActive,
   });
 
   @override
@@ -36,9 +49,13 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
   late AnimationController _animationController;
   late Animation<double> _animation;
   late List<Map<String, dynamic>> aggregatedList;
+  late Duration remainingTime;
+  late Timer _timer;
 
   @override
   void initState() {
+    remainingTime = _calculateRemainingDuration(widget.timerDuration);
+    _startTimer();
     _animationController = AnimationController(
         vsync: this,
         duration: Duration(milliseconds: 300)
@@ -51,28 +68,84 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
     super.initState();
   }
 
+  void _startTimer() {
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (remainingTime.inSeconds > 0) {
+        setState(() {
+          remainingTime = remainingTime - Duration(seconds: 1);
+        });
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
   @override
   void dispose() {
-    _animationController.dispose();
+    _timer.cancel();
     super.dispose();
   }
 
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
 
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
+
+  Duration _calculateRemainingDuration(String timestampz) {
+    try {
+      // Parse the timestamp string into a DateTime object
+      final DateTime targetTime = DateTime.parse(timestampz);
+
+      // Get the current time
+      final DateTime now = DateTime.now();
+
+      // Calculate the difference
+      final Duration remainingDuration = targetTime.difference(now);
+
+      // Ensure non-negative duration
+      return remainingDuration.isNegative ? Duration.zero : remainingDuration;
+    } catch (e) {
+      // Handle any parsing errors
+      debugPrint('Error parsing timestampz: $e');
+      return Duration.zero;
+    }
+  }
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+
+    final days = duration.inDays;
+    final hours = twoDigits(duration.inHours.remainder(24));
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+
+    if (days > 0) {
+      return '$days ${DetailsCardLabels.getLabel(getCurrentLanguage(), 'timer_days_value')} | $hours:$minutes:$seconds';
+    } else {
+      return '$hours:$minutes:$seconds';
+    }
+  }
   String formatAmount(int amount) {
+    final profileProvider= Provider.of<ProfileProvider>(context,listen: false);
+    final currentCurrency = Currency.values.firstWhere((element) => element.code == profileProvider.profile!.settings.currency);
+    final currencyFormat = currentCurrency.format(amount.toDouble());
     if (amount >= 1000000) {
-      double result = double.parse((amount / 1000000).toStringAsFixed(2));
-      // If the result is a whole number, remove the decimal
+      double result = amount / 1000000;
       return result == result.toInt().toDouble()
-          ? '${result.toInt()}M' // No decimal places for whole numbers
-          : '${result.toStringAsFixed(1)}M'; // Otherwise, show one decimal place
+          ? '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency)}M'
+          : '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency).toStringAsFixed(1)}M';
     } else if (amount >= 1000) {
       double result = amount / 1000;
-      // If the result is a whole number, remove the decimal
       return result == result.toInt().toDouble()
-          ? '${result.toInt()}k' // No decimal places for whole numbers
-          : '${result.toStringAsFixed(1)}k'; // Otherwise, show one decimal place
+          ? '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency)}k'
+          : '${currentCurrency.symbol} ${currentCurrency.convert(result.toDouble(),currentCurrency).toStringAsFixed(1)}k';
     } else {
-      return amount.toString(); // No abbreviation for values < 1000
+      return  "${currentCurrency.symbol} ${currentCurrency.convert(amount.toDouble(),currentCurrency)}";
     }
   }
   List<Map<String, dynamic>> aggregateSingleDonationItemFromDonations(
@@ -125,7 +198,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
   Widget build(BuildContext context) {
 
 
-      
+
     print(widget.amountRaised);
     return Scaffold(
       appBar: AppBar(
@@ -144,21 +217,21 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: IconButton(
-              style: ButtonStyle(
-                backgroundColor: WidgetStatePropertyAll(Colors.white12)
-              ),
-              color: Colors.black87,
-              onPressed: () {
-                Map<String,dynamic> tempData={'id': widget.id,'title' : widget.title,'amount_raised' : widget.amountRaised , 'pic' : widget.pic};
-                print(tempData);
-                Navigator.push(context, MaterialPageRoute(builder: (context) => QRCodeScannerPage(data: tempData,),));
-              },
-              icon: Icon(Icons.qr_code,)
+                style: ButtonStyle(
+                    backgroundColor: WidgetStatePropertyAll(Colors.white12)
+                ),
+                color: Colors.black87,
+                onPressed: () {
+                  Map<String,dynamic> tempData={'id': widget.id,'title' : widget.title,'amount_raised' : widget.amountRaised , 'pic' : widget.pic};
+                  print(tempData);
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => QRCodeScannerPage(data: tempData,),));
+                },
+                icon: Icon(Icons.qr_code,)
             ),
           ),
         ],
       ),
-      
+
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -193,7 +266,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              "Campaign Progress",
+                              DetailsCardLabels.getLabel(getCurrentLanguage(), 'campaign_progress_value'),
                               style: TextStyle(
                                 fontSize: 20.0,
                                 fontWeight: FontWeight.bold,
@@ -224,8 +297,8 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                             ),
                             Positioned.fill(
                               child: Center(
-                                child: Text((((widget.amountRaised / widget.goal) * 100) >= 100) ? "Completed" :
-                                  "${((widget.amountRaised / widget.goal) * 100).toStringAsFixed(1)}%",
+                                child: Text((((widget.amountRaised / widget.goal) * 100) >= 100) ? DetailsCardLabels.getLabel(getCurrentLanguage(), 'completed_text_value') :
+                                "${((widget.amountRaised / widget.goal) * 100).toStringAsFixed(1)}%",
                                   style: TextStyle(
                                     fontSize: 14.0,
                                     fontWeight: FontWeight.bold,
@@ -246,7 +319,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  "Raised",
+                                  DetailsCardLabels.getLabel(getCurrentLanguage(), 'raised_text_value'),
                                   style: TextStyle(
                                     fontSize: 14.0,
                                     fontWeight: FontWeight.w500,
@@ -255,7 +328,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                                 ),
                                 SizedBox(height: 4.0),
                                 Text(
-                                  "\$${formatAmount(widget.amountRaised)}",
+                                  "${formatAmount(widget.amountRaised,)}",
                                   style: TextStyle(
                                     fontSize: 18.0,
                                     fontWeight: FontWeight.bold,
@@ -273,7 +346,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  "Goal",
+                                  DetailsCardLabels.getLabel(getCurrentLanguage(), 'goal_text_value'),
                                   style: TextStyle(
                                     fontSize: 14.0,
                                     fontWeight: FontWeight.w500,
@@ -282,7 +355,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                                 ),
                                 SizedBox(height: 4.0),
                                 Text(
-                                  "\$${formatAmount(widget.goal)}",
+                                  "${formatAmount(widget.goal)}",
                                   style: TextStyle(
                                     fontSize: 18.0,
                                     fontWeight: FontWeight.bold,
@@ -292,8 +365,29 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                               ],
                             ),
                           ],
-                        )
-
+                        ),
+                        SizedBox(
+                          height: 20,
+                        ),
+                        if(widget.isActive)
+                          Container(
+                            padding: EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Text(
+                                "⏳ ${DetailsCardLabels.getLabel(getCurrentLanguage(), 'time_left_text_value')}: ${_formatDuration(remainingTime)}",
+                                style: TextStyle(
+                                  fontSize: 16.0,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -302,7 +396,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                 Divider(color: Colors.grey.shade400),
 
                 Text(
-                  "Description",
+                  DetailsCardLabels.getLabel(getCurrentLanguage(), 'description_title_value'),
                   style: TextStyle(
                     fontSize: 26.0, // Slightly larger for prominence
                     fontWeight: FontWeight.w600,
@@ -332,7 +426,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
 
                 // Donation Breakdown Chart
                 Text(
-                  "Donation Breakdown",
+                  DetailsCardLabels.getLabel(getCurrentLanguage(), 'donation_breakdown_value'),
                   style: TextStyle(
                     fontSize: 20.0,
                     fontWeight: FontWeight.bold,
@@ -359,7 +453,7 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
 
                 // Donation Items with Description
                 Text(
-                  "Donation Item Details",
+                  DetailsCardLabels.getLabel(getCurrentLanguage(), 'donation_itme_details_value'),
                   style: TextStyle(
                     fontSize: 22.0,
                     fontWeight: FontWeight.bold,
@@ -368,41 +462,66 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                 ),
                 SizedBox(height: 16.0), // Better spacing
                 Container(
-                  height: MediaQuery.of(context).size.height * .4, // Slightly larger height for better scroll visibility
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
+                  height: MediaQuery.of(context).size.height * .4, // Adjustable height
+                  padding: EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                    color: Colors.teal.shade400.withOpacity(0.5), // Light teal background for the list
-                    borderRadius: BorderRadius.circular(10.0),
+                    color: Colors.teal.shade200, // Frosted glass effect
+                    borderRadius: BorderRadius.circular(15.0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
                   ),
-                  child: widget.statisticsData.isEmpty ?  Center(child: Text("No Donations!",style: TextStyle(fontSize: 22,color: Colors.grey.shade600,fontWeight: FontWeight.bold),),) : ListView.separated(
-                    separatorBuilder: (context, index) => Divider(color: Colors.teal.shade100),
+                  child: widget.statisticsData.isEmpty
+                      ? Center(
+                    child: Text(
+                      DetailsCardLabels.getLabel(getCurrentLanguage(), 'no_donations_text_value'),
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  )
+                      : ListView.separated(
+                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                    separatorBuilder: (context, index) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      child: Divider(color: Colors.teal.shade100, thickness: 1),
+                    ),
                     itemCount: widget.statisticsData.length,
                     itemBuilder: (context, index) {
                       final item = widget.statisticsData[index];
                       return Card(
-                        elevation: 3.0, // Subtle shadow for better separation
-                        margin: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                        elevation: 3.0,
+                        margin: EdgeInsets.symmetric(vertical: 6.0, horizontal: 4.0),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10.0),
+                          borderRadius: BorderRadius.circular(12.0),
                         ),
-                        color: Colors.teal.shade50, // Teal-shaded background for the card
+                        color: Colors.white, // White background for contrast
                         child: Padding(
                           padding: EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
                           child: Row(
                             children: [
+                              // Profile Avatar
                               CircleAvatar(
-                                radius: 24.0, // Larger size for a more prominent look
+                                radius: 28.0,
                                 backgroundColor: Colors.teal.shade700,
                                 child: Text(
                                   item['username'][0].toUpperCase(),
                                   style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: 18.0,
+                                    fontSize: 20.0,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
-                              SizedBox(width: 12.0),
+                              SizedBox(width: 14.0),
+
+                              // User Info
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -422,19 +541,28 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
                                         fontSize: 14.0,
                                         color: Colors.teal.shade600,
                                       ),
-                                      maxLines: 2, // Ensure it doesn't overflow
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
                               ),
+
+                              // Donation Amount
                               SizedBox(width: 12.0),
-                              Text(
-                                "\$${item['amount']}",
-                                style: TextStyle(
-                                  fontSize: 18.0,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.teal.shade700,
+                              Container(
+                                padding: EdgeInsets.symmetric(vertical: 6.0, horizontal: 10.0),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(8.0),
+                                ),
+                                child: Text(
+                                  "${formatAmount(item['amount'])}", // Formats large numbers
+                                  style: TextStyle(
+                                    fontSize: 18.0,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.shade700,
+                                  ),
                                 ),
                               ),
                             ],
@@ -454,190 +582,6 @@ class _DonationStatisticsPageState extends State<DonationStatisticsPage> with Ti
   }
 
 
-
-
 }
 
 
-
-class DonationBarChart extends StatefulWidget {
-  final List<Map<String, dynamic>> data; // Aggregated donation data
-  final double minY;
-  final double maxY;
-  final AnimationController animationController;
-  final Animation<double> animation;
-  final Duration duration;
-  final bool showBarTouchData;
-  final double height;
-  final double width;
-
-  DonationBarChart({
-    super.key,
-    required this.data,
-    required this.minY,
-    required this.maxY,
-    required this.animationController,
-    required this.animation,
-    required this.duration,
-    required this.showBarTouchData,
-    required this.height,
-    required this.width,
-  });
-
-  @override
-  State<DonationBarChart> createState() => _DonationBarChartState();
-}
-
-class _DonationBarChartState extends State<DonationBarChart> {
-  late List<Map<String, dynamic>> chartData;
-
-  @override
-  void initState() {
-    super.initState();
-    chartData = widget.data;
-  }
-
-  /// Convert `charts.Color` to Flutter's `Color`
-  Color formatColor(dynamic color) {
-    if (color is charts.Color) {
-      return Color.fromARGB(color.a, color.r, color.g, color.b);
-    }
-    return Colors.grey; // Fallback color
-  }
-
-  /// Format double values to two decimal places
-  double formatDouble(double value) {
-    return double.parse((value).roundToDouble().toStringAsFixed(2));
-  }
-  double formatToolTipMargin(double dataPercent){
-    if(dataPercent<=widget.maxY * .20){
-      return (5) * widget.animationController.value;
-    }else{
-      return (-95) * widget.animationController.value;
-    }
-  }
-  String formatCompactNumber(double value) {
-    if (value >= 1e9) {
-      return '${(value / 1e9).toStringAsFixed(1)}B'; // Format as billions
-    } else if (value >= 1e6) {
-      return '${(value / 1e6).toStringAsFixed(1)}M'; // Format as millions
-    } else if (value >= 1e3) {
-      return '${(value / 1e3).toStringAsFixed(1)}K'; // Format as thousands
-    } else {
-      return value.toStringAsFixed(0); // Format as a whole number
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.animationController,
-      builder: (context, child) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (int i = 0; i < chartData.length; i++) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  // Display username
-                  Container(
-                    alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(20),
-                        bottomLeft: Radius.circular(20),
-                      ),
-                      color: Colors.teal.shade900.withOpacity(0.7),
-                    ),
-                    width: MediaQuery.of(context).size.width * .25,
-                    height: widget.height,
-                    child: Text(
-                      chartData[i]['username'] ?? 'Unknown',
-                      style: const TextStyle(
-                        overflow: TextOverflow.clip,
-
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      maxLines: 2,
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-
-                  // Display bar chart for the amount
-                  SizedBox(
-                    height: widget.height,
-                    width: widget.width,
-                    child: RotatedBox(
-                      quarterTurns: 1,
-                      child: AnimatedBuilder(
-                        animation: CurvedAnimation(
-                          parent: widget.animationController,
-                          curve: Curves.easeInOut,
-                        ),
-                        builder: (context, child) {
-                          return BarChart(
-                            BarChartData(
-                              gridData: FlGridData(show: false),
-                              extraLinesData: ExtraLinesData(extraLinesOnTop: true),
-                              borderData: FlBorderData(show: false),
-                              titlesData: const FlTitlesData(
-                                show: true,
-                                leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                              ),
-                              maxY: widget.maxY,
-                              minY: widget.minY,
-                              barTouchData: BarTouchData(
-                                enabled: true, // Change this according to your needs
-                                allowTouchBarBackDraw: true,
-
-                                touchTooltipData: BarTouchTooltipData(
-                                  tooltipRoundedRadius: 20,
-                                  rotateAngle: -90,
-                                  tooltipPadding: const EdgeInsets.only(right: 5, left: 5, top: 5),
-                                  tooltipMargin: formatToolTipMargin(formatDouble(chartData[i]['amount'] * widget.animationController.value)),
-                                ),
-
-                              ),
-                              barGroups: [
-                                BarChartGroupData(
-                                  x: i,
-                                  barRods: [
-                                    BarChartRodData(
-                                      toY: formatDouble(
-                                        chartData[i]['amount'] *
-                                            widget.animationController.value,
-                                      ),
-                                      width: widget.height,
-                                      color: formatColor(chartData[i]['color']),
-                                      borderRadius: const BorderRadius.only(
-                                        topLeft: Radius.circular(10),
-                                        topRight: Radius.circular(10),
-                                      ),
-                                    ),
-                                  ],
-                                  showingTooltipIndicators: [0],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16), // Add spacing between bars
-            ],
-          ],
-        );
-      },
-    );
-  }
-}

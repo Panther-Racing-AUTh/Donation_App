@@ -1,4 +1,12 @@
+import 'package:donation_app_v1/const_values/feedback_page_values.dart';
+import 'package:donation_app_v1/const_values/title_values.dart';
+import 'package:donation_app_v1/enums/drawer_enum.dart';
+import 'package:donation_app_v1/models/drawer_model.dart';
+import 'package:donation_app_v1/models/profile_model.dart';
+import 'package:donation_app_v1/models/settings_model.dart';
+import 'package:donation_app_v1/providers/provider.dart';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -18,25 +26,27 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   bool isSubmitted=false;
   double rating=0.0;
 
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
 
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
   @override
   Widget build(BuildContext context) {
-
+    final profileProvider=Provider.of<ProfileProvider>(context,listen: false);
     return Scaffold(
         backgroundColor: Colors.white,
-
+        drawer: DonationAppDrawer(drawerIndex: DrawerItem.feedback.index),
         appBar: AppBar(
           backgroundColor: Colors.teal.shade200,
-          leading: GestureDetector(
-            child: Icon(
-                Icons.close
-            ),
-            onTap: () {
-              Navigator.pushReplacementNamed(context,'/donation');
-            },
-          ),
+
           centerTitle: true,
-          title: Text("Feedback"),
+          title: Text(PageTitles.getTitle(getCurrentLanguage(), 'feedback_page_title')),
         ),
         body: ChangeNotifierProvider(create:(context) =>  FeedbackProvider(),builder: (context, child) => isSubmitted ?
         ListView(
@@ -62,14 +72,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Thanks for your feedback!',
+                      FeedbackLabels.getFeedbackLabel(getCurrentLanguage(), 'thanks_feedback'),
                       style: TextStyle(fontSize: 22.0),
                       textAlign: TextAlign.center,
                     ),
 
                     SizedBox(height: 6.0),
                     Text(
-                      'We will consider it carefully.',
+                      FeedbackLabels.getFeedbackLabel(getCurrentLanguage(), 'we_consider_text'),
                       style: TextStyle(fontSize: 12.0),
                       textAlign: TextAlign.center,
                     ),
@@ -85,7 +95,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                       onPressed: () {
                         Navigator.pushReplacementNamed(context,'/donation');
                       },
-                      child: Text('Go Back',style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold),),
+                      child: Text(FeedbackLabels.getFeedbackLabel(getCurrentLanguage(), 'go_back_button'),style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold),),
                     ),
 
                   ],
@@ -118,7 +128,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Please send us your feedback!',
+                      FeedbackLabels.getFeedbackLabel(getCurrentLanguage(), 'send_feedback_text'),
                       style: TextStyle(fontSize: 22.0),
                       textAlign: TextAlign.center,
                     ),
@@ -136,7 +146,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                       maxLines: 20,
                       controller: feedbackText,
                       decoration: InputDecoration(
-                        hintText: 'Enter your feedback here...',
+                        hintText: FeedbackLabels.getFeedbackLabel(getCurrentLanguage(), 'enter_feedback_hint'),
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(20)
                         ),
@@ -178,7 +188,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                       );
                     }
                   },
-                  child: Text('Submit Feedback',style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold),),
+                  child: Text(FeedbackLabels.getFeedbackLabel(getCurrentLanguage(), 'submit_feedback_button'),style: TextStyle(fontSize: 18,fontWeight: FontWeight.bold),),
                 ),
               ),
             ]
@@ -263,7 +273,7 @@ class _FiveStarRatingState extends State<FiveStarRating> {
           double temp=((details.localPosition.dx / _starSize + 1).clamp(0.0, 5.0)).floorToDouble();
           feedbackProvider.star_rating=temp;
 
-          print('${feedbackProvider.star_rating}               ${temp}');
+          print('${feedbackProvider.star_rating} ${temp}');
         });
       },
       child: Stack(

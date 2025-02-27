@@ -1,11 +1,17 @@
+import 'package:donation_app_v1/const_values/profile_page_values.dart';
+import 'package:donation_app_v1/const_values/title_values.dart';
+import 'package:donation_app_v1/enums/currency_enum.dart';
+import 'package:donation_app_v1/enums/drawer_enum.dart';
 import 'package:donation_app_v1/models/drawer_model.dart';
 import 'package:donation_app_v1/enums/card_type_enum.dart';
 import 'package:donation_app_v1/models/card_model.dart';
+import 'package:donation_app_v1/models/settings_model.dart';
 import 'package:donation_app_v1/providers/provider.dart';
 import 'package:donation_app_v1/widgets/balance_widget.dart';
 import 'package:donation_app_v1/widgets/profile_avatar_widget.dart';
 import 'package:donation_app_v1/widgets/wallet_widget.dart';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -107,7 +113,23 @@ class _ProfilePageState extends State<ProfilePage> {
       });
     }
   }
-
+  String formatAmount(int amount) {
+    final profileProvider= Provider.of<ProfileProvider>(context,listen: false);
+    final currentCurrency = Currency.values.firstWhere((element) => element.code == profileProvider.profile!.settings.currency);
+    if (amount >= 1000000) {
+      double result = amount / 1000000;
+      return result == result.toInt().toDouble()
+          ? '${currentCurrency.symbol} ${result.toInt()}M'
+          : '${currentCurrency.symbol} ${result.toStringAsFixed(1)}M';
+    } else if (amount >= 1000) {
+      double result = amount / 1000;
+      return result == result.toInt().toDouble()
+          ? '${currentCurrency.symbol} ${result.toInt()}k'
+          : '${currentCurrency.symbol} ${result.toStringAsFixed(1)}k';
+    } else {
+      return  "${currentCurrency.symbol} ${currentCurrency.convert(amount.toDouble(),currentCurrency)}";
+    }
+  }
   void _addDonation() {
     final amount = selectedPredefinedAmount ?? int.tryParse(_amountController.text.trim());
     if (amount != null) {
@@ -116,23 +138,41 @@ class _ProfilePageState extends State<ProfilePage> {
       print("Donation of \$${amount} added.");
     }
   }
-  String formatAmountWithBullets(int amount) {
-    // Use NumberFormat from the intl package
-    final formatter = NumberFormat('#,###', 'en_US');
-    return formatter.format(amount).replaceAll(',', '.');
+  String formatAmountWithBullets(int amount, BuildContext context) {
+    final profileProvider = Provider.of<ProfileProvider>(context, listen: false);
+    final currentCurrency = Currency.values.firstWhere(
+          (element) => element.code == profileProvider.profile!.settings.currency,
+    );
+
+    // Convert amount to currency format
+    double convertedAmount = currentCurrency.convert(amount.toDouble(), currentCurrency);
+    final currencyFormat = "${currentCurrency.symbol} ${currentCurrency.convert(amount.toDouble(),currentCurrency).toStringAsFixed(2)}";
+
+    // Replace commas with dots for bullet-style formatting
+    return currencyFormat.replaceAll(',', '.');
   }
 
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
+
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
   @override
   Widget build(BuildContext context) {
     ProfileProvider profileProvider=Provider.of<ProfileProvider>(context,listen: false);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Profile"),
+        title: Text(PageTitles.getTitle(getCurrentLanguage(), 'profile_page_title')),
         centerTitle: true,
         backgroundColor: Colors.teal,
       ),
-      drawer: DonationAppDrawer(),
+      drawer: DonationAppDrawer(drawerIndex: DrawerItem.profile.index,),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -174,11 +214,11 @@ class _ProfilePageState extends State<ProfilePage> {
                               const SizedBox(height: 4),
                               if(widget.isTopDonator)
                                 Row(
-                                  children: const [
+                                  children:  [
                                     Icon(Icons.star, color: Colors.amber, size: 18),
                                     SizedBox(width: 4),
                                     Text(
-                                      "Top Donor",
+                                      ProfileLabels.getLabel(getCurrentLanguage(), 'top_donors_title_value'),
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: Colors.green,
@@ -193,7 +233,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                 child: Column(
                                   children: [
                                     Text(
-                                      "Total Donations: ",
+                                      ProfileLabels.getLabel(getCurrentLanguage(), 'total_donations_value'),
                                       style:  TextStyle(
                                           fontSize: 16,
                                           color: Colors.teal.shade700,
@@ -201,7 +241,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                       ),
                                     ),
                                     Text(
-                                      "${formatAmountWithBullets(donationsByUsername['totalAmount'] ?? 0)} \$",
+                                      "${formatAmountWithBullets(donationsByUsername['totalAmount'] ?? 0,context)}",
                                       style:  TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
@@ -243,7 +283,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     padding:  EdgeInsets.symmetric(vertical: 8.0),
                     child: Column(
                       children: [
-                        _buildSectionHeader("Donation History"),
+                        _buildSectionHeader(ProfileLabels.getLabel(getCurrentLanguage(), 'donation_history_title_value')),
                         SizedBox(height: 16),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -401,7 +441,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           color: Colors.white, size: 30),
                       const SizedBox(width: 8),
                       Text(
-                        "\$${formatAmountWithBullets(donation['amount'])}",
+                        "${formatAmountWithBullets(donation['amount'],context)}",
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -423,7 +463,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   Text(
                     donation['description'] != ''
                         ? donation['description']
-                        : 'No description',
+                        : ProfileLabels.getLabel(getCurrentLanguage(), 'no_description_value'),
                     style: donation['description'] != ''
                         ? const TextStyle(
                       fontSize: 16,
@@ -467,7 +507,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         const Icon(Icons.category, color: Colors.white, size: 20),
                         const SizedBox(width: 8),
                         Text(
-                          donation['category'] ?? 'No category',
+                          donation['category'] ?? ProfileLabels.getLabel(getCurrentLanguage(), 'no_category_value'),
                           style: const TextStyle(
                             fontSize: 14,
                             color: Colors.white,
@@ -499,7 +539,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 16),
               Text(
-                "No Donations",
+                ProfileLabels.getLabel(getCurrentLanguage(), 'no_donations_value'),
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w500,

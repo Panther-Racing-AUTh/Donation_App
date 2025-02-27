@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:donation_app_v1/enums/drawer_enum.dart';
+import 'package:donation_app_v1/models/drawer_model.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_code_scanner/qr_code_scanner.dart';
 
@@ -69,31 +71,39 @@ class _QrCodeScannerState extends State<QrCodeScanner> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        QRView(
-          key: qrKey,
-          onQRViewCreated: _onQRViewCreated,
-          overlay: QrScannerOverlayShape(
-            borderColor: Colors.green,
-            borderRadius: 10,
-            borderLength: 20,
-            borderWidth: 5,
-            cutOutSize: MediaQuery.of(context).size.width * 0.8,
+    return Scaffold(
+      drawer: DonationAppDrawer(drawerIndex: DrawerItem.qrScanner.index),
+      body: Stack(
+        children: [
+          QRView(
+            key: qrKey,
+            onQRViewCreated: _onQRViewCreated,
+            overlay: QrScannerOverlayShape(
+              borderColor: Colors.green,
+              borderRadius: 10,
+              borderLength: 20,
+              borderWidth: 5,
+              cutOutSize: MediaQuery.of(context).size.width * 0.8,
+            ),
           ),
-        ),
-        Positioned(
-          top: 30,
-          right: 10,
-          child: IconButton(
-            style: ButtonStyle(backgroundColor: WidgetStatePropertyAll(Colors.white24)),
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            icon: Icon(Icons.close,size: 25,color: Colors.black,),
+          Positioned(
+            top: 40,
+            left: 20,
+            child: Builder( // ✅ Use Builder to provide a new context
+              builder: (context) => IconButton(
+                style: ButtonStyle(
+                  backgroundColor: WidgetStatePropertyAll(Colors.white24),
+                ),
+                onPressed: () {
+                  Scaffold.of(context).openDrawer(); // ✅ Works inside Builder
+                },
+                icon: Icon(Icons.menu, size: 25, color: Colors.black),
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+
 }

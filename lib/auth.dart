@@ -1,10 +1,14 @@
 
 // Sign In Page
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:donation_app_v1/const_values/auth_valued.dart';
 import 'package:donation_app_v1/const_values/title_values.dart';
+import 'package:donation_app_v1/enums/language_enum.dart';
 import 'package:donation_app_v1/models/profile_model.dart';
+import 'package:donation_app_v1/models/settings_model.dart';
 import 'package:donation_app_v1/providers/provider.dart';
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -163,13 +167,25 @@ class _SignInPageState extends State<SignInPage> {
     );
   }
 
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
+
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
 
   @override
   Widget build(BuildContext context) {
     Future.delayed(const Duration(seconds: 5), () => _connectionCheck());
+    final profileProvider= Provider.of<ProfileProvider>(context,listen: false);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sign In'),
+        title:Text(PageTitles.getTitle(getCurrentLanguage(), 'sign_in_title')),
         centerTitle: true,
         backgroundColor: Colors.teal,
         elevation: 0,
@@ -218,7 +234,7 @@ class _SignInPageState extends State<SignInPage> {
                   TextField(
                     controller: _emailController,
                     decoration: InputDecoration(
-                      labelText: 'Email',
+                      labelText: AuthLabels.getLabel(getCurrentLanguage(), 'email_label_value'),
                       labelStyle: TextStyle(color: Colors.teal.shade800),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -241,7 +257,7 @@ class _SignInPageState extends State<SignInPage> {
                   TextField(
                     controller: _passwordController,
                     decoration: InputDecoration(
-                      labelText: 'Password',
+                      labelText: AuthLabels.getLabel(getCurrentLanguage(), 'password_label_value'),
                       labelStyle: TextStyle(color: Colors.teal.shade800),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -274,7 +290,7 @@ class _SignInPageState extends State<SignInPage> {
                       onPressed: _isLoading ? null : _isOnline ? _signIn : null,
                       child: _isLoading
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('Sign In', style: TextStyle(fontSize: 16)),
+                          : Text(AuthLabels.getLabel(getCurrentLanguage(), 'sign_in_button'), style: TextStyle(fontSize: 16)),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -282,7 +298,7 @@ class _SignInPageState extends State<SignInPage> {
                     onPressed: () {
                       Navigator.pushReplacementNamed(context, '/signUp');
                     },
-                    child: const Text("Don't have an account? Register"),
+                    child: Text(AuthLabels.getLabel(getCurrentLanguage(), 'go_to_register_button')),
                   ),
                 ],
               ),
@@ -373,11 +389,12 @@ class _SignUpPageState extends State<SignUpPage> {
           password: password,
           data: {'username': username},
         );
+        print("object");
         final response1 = await _supabaseClient.from('profiles').insert({
           'username': username,
           'wallet' : 0,
-          'payment_cards' : [],
-          'image_url' : '',
+          'payment_cards' : null,
+          'image_url' : null,
           'settings' : {
             "theme": "dark",
             "language": "en",
@@ -389,6 +406,7 @@ class _SignUpPageState extends State<SignUpPage> {
           _showMessage(
             'Registration Successful. Please check your email for confirmation.',
           );
+          _supabaseClient.auth.signOut();
           Navigator.pushReplacementNamed(context, '/signIn');
         }
       } on AuthException catch (e) {
@@ -446,12 +464,25 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
+
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final profileProvider= Provider.of<ProfileProvider>(context,listen: false);
+
     Future.delayed(const Duration(seconds: 5), () => _connectionCheck());
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sign Up'),
+        title: Text(PageTitles.getTitle(getCurrentLanguage(), 'sign_up_title')),
         centerTitle: true,
         backgroundColor: Colors.teal,
         elevation: 0,
@@ -500,7 +531,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   TextField(
                     controller: _usernameController,
                     decoration: InputDecoration(
-                      labelText: 'Username',
+                      labelText: AuthLabels.getLabel(getCurrentLanguage(), 'username_label_value'),
                       labelStyle: TextStyle(color: Colors.teal.shade800),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -523,7 +554,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   TextField(
                     controller: _emailController,
                     decoration: InputDecoration(
-                      labelText: 'Email',
+                      labelText: AuthLabels.getLabel(getCurrentLanguage(), 'email_label_value'),
                       labelStyle: TextStyle(color: Colors.teal.shade800),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -546,7 +577,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   TextField(
                     controller: _passwordController,
                     decoration: InputDecoration(
-                      labelText: 'Password',
+                      labelText: AuthLabels.getLabel(getCurrentLanguage(), 'password_label_value'),
                       labelStyle: TextStyle(color: Colors.teal.shade800),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -579,7 +610,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       onPressed: _isLoading ? null : _isOnline ? _signUp : null,
                       child: _isLoading
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('Register', style: TextStyle(fontSize: 16)),
+                          : Text(AuthLabels.getLabel(getCurrentLanguage(), 'sign_up_button'), style: TextStyle(fontSize: 16)),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -587,7 +618,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     onPressed: () {
                       Navigator.pushReplacementNamed(context, '/signIn');
                     },
-                    child: const Text("Do you have an account? Sign in"),
+                    child: Text(AuthLabels.getLabel(getCurrentLanguage(), 'go_to_sign_in_button')),
                   ),
                 ],
               ),

@@ -1,7 +1,15 @@
+import 'package:donation_app_v1/const_values/profile_page_values.dart';
 import 'package:donation_app_v1/enums/card_type_enum.dart';
 import 'package:donation_app_v1/models/card_model.dart';
+import 'package:donation_app_v1/models/settings_model.dart';
+import 'package:donation_app_v1/providers/provider.dart';
+import 'package:donation_app_v1/screens/lock_screen.dart';
+import 'package:donation_app_v1/screens/otp_verification_screen.dart';
+import 'package:donation_app_v1/screens/welcome_digit_code.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -19,10 +27,17 @@ class WalletWidget extends StatefulWidget {
 }
 
 class _WalletWidgetState extends State<WalletWidget> {
+  bool authChecked=false;
+  bool authRemoveChecked=false;
   @override
   void initState() {
     super.initState();
     _loadCardDetails();
+    authChecked==false;
+    authRemoveChecked=false;
+    for(var card in widget.cards){
+      card.isHidden=true;
+    }
   }
 
   Future<void> _loadCardDetails() async {
@@ -68,6 +83,16 @@ class _WalletWidgetState extends State<WalletWidget> {
       _showMessage("Failed to add card. Please try again.");
     }
   }
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
+
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
   void _addCard() {
     showDialog(
       context: context,
@@ -87,6 +112,39 @@ class _WalletWidgetState extends State<WalletWidget> {
       SnackBar(content: Text(message)),
     );
   }
+
+  Future<void> removePaymentCard(PaymentCard cardToRemove) async {
+    ProfileProvider profileProvider = Provider.of<ProfileProvider>(context, listen: false);
+    try {
+      // Get the current user
+      final user = _supabaseClient.auth.currentUser;
+      if (user == null) {
+        throw Exception("User not authenticated.");
+      }
+
+      // Remove the card from the profile provider's payment cards list
+      profileProvider.profile!.paymentCards.removeWhere(
+            (card) => card.cardNumber == cardToRemove.cardNumber &&
+            card.expirationDate == cardToRemove.expirationDate &&
+            card.uuid == cardToRemove.uuid,
+      );
+
+      // Get the updated list of cards
+      List<dynamic> updatedCards = convertCardsToJson(profileProvider.profile!.paymentCards) ?? [];
+
+      // Update the database with the new list of cards
+      await _supabaseClient
+          .from('profiles')
+          .update({'payment_cards': updatedCards})
+          .eq('username', user.userMetadata?['username']);
+
+      _showMessage("Card removed successfully!");
+    } catch (e) {
+      print("Error removing card: $e");
+      _showMessage("Failed to remove card. Please try again.");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return widget.cards.isEmpty
@@ -97,14 +155,14 @@ class _WalletWidgetState extends State<WalletWidget> {
           Icon(FontAwesomeIcons.wallet, size: 50, color: Colors.grey.shade400),
           SizedBox(height: 10),
           Text(
-            'No cards available',
+            ProfileLabels.getLabel(getCurrentLanguage(), 'No cards available'),
             style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w500),
           ),
           SizedBox(height: 15),
           ElevatedButton.icon(
             onPressed: _addCard,
             icon: Icon(Icons.add_card,color: Colors.white70,),
-            label: Text('Add Card',style: TextStyle(color: Colors.white70),),
+            label: Text(ProfileLabels.getLabel(getCurrentLanguage(), 'Add Card'),style: TextStyle(color: Colors.white70),),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.teal,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -122,11 +180,11 @@ class _WalletWidgetState extends State<WalletWidget> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
-            'Your Wallet',
+            ProfileLabels.getLabel(getCurrentLanguage(), 'Your Wallet'),
             style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold),
           ),
         ),
-        SizedBox(height: 10),
+        SizedBox(height: 20),
         SizedBox(
           height: 220,
           width: double.infinity,
@@ -140,7 +198,7 @@ class _WalletWidgetState extends State<WalletWidget> {
         ElevatedButton.icon(
           onPressed: _addCard,
           icon: Icon(Icons.add_card,color: Colors.white70,),
-          label: Text('Add Card',style: TextStyle(color: Colors.white70),),
+          label: Text(ProfileLabels.getLabel(getCurrentLanguage(), ProfileLabels.getLabel(getCurrentLanguage(), 'Add Card')),style: TextStyle(color: Colors.white70),),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.teal,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -161,123 +219,174 @@ class _WalletWidgetState extends State<WalletWidget> {
 
     return Container(
       width: 300,
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(3, 3)),
+          BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(6, 0),spreadRadius: 0),
         ],
       ),
       child: Stack(
         children: [
-          Card(
-            elevation: 8,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.teal.shade700, Colors.teal.shade400],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          Column(
+            children: [
+              // Front Side of Card
+              Container(
+                height: 180,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blue.shade900, Colors.teal.shade500],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                borderRadius: BorderRadius.circular(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Image.asset('assets/panther_transparent_logo.png',width: 60,height: 60,),
+                    const Spacer(),
+                    Text(
+                      maskedCardNumber,
+                      style: GoogleFonts.robotoMono(fontSize: 17, color: Colors.white),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          'Exp: ${card.expirationDate.substring(0, 2)}/${card.expirationDate.substring(2)}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        SizedBox(
+                          width: 40,
+                        ),
+                        Text(
+                          'CVC: $maskedCVC',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
 
-                  Spacer(),
-                  Text(
-                    maskedCardNumber,
-                    style: GoogleFonts.robotoMono(fontSize: 16, color: Colors.white),
-                  ),
-                  SizedBox(
-                    height: 10,
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Exp: ${card.expirationDate.substring(0, 2)}/${card.expirationDate.substring(2)}',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      Text(
-                        'CVC: $maskedCVC',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ],
-                  ),
-
-                ],
-              ),
-            ),
+              // Back Side of Card (Simulating magnetic stripe)
+            ],
           ),
           Positioned(
-            left: 20,
-            top: 20,
+            right: 20,
+            bottom: 40,
             child: card.cardType.getIcon(),
+
           ),
           Positioned(
             right: 10,
-            top: 27,
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
+            top: 20,
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () async {
+                    if (!authChecked) {
+                      card.isHidden=true;
                       setState(() {
-                        card.isHidden = !card.isHidden;
+
                       });
-                    },
-                    child: Icon(card.isHidden ? Icons.visibility : Icons.visibility_off, color: Colors.white70),
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => LockScreen(
+                            isAuthCheck: true,
+                            isLockSetup: false,
+                          ),
+                        ),
+                      );
+
+                      if (result == true) {
+                        authChecked = true;
+                        print("Access Granted!");
+                      } else {
+                        authChecked = false;
+                        print("Access Denied.");
+                      }
+                    }
+                    if (authChecked) {
+                      card.isHidden = !card.isHidden;
+                      setState(() {});
+                    }
+                  },
+                  child: Icon(card.isHidden ? Icons.visibility : Icons.visibility_off,
+                      color: Colors.white70),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTapDown: (TapDownDetails details) {
+                    final tapPosition = details.globalPosition;
+                    final RenderBox overlay =
+                    Overlay.of(context).context.findRenderObject() as RenderBox;
+                    showMenu<String>(
+                      context: context,
+                      position: RelativeRect.fromRect(
+                        tapPosition & const Size(40, 40),
+                        Offset.zero & overlay.size,
+                      ),
+                      items: [
+                        PopupMenuItem<String>(
+                          value: 'edit',
+                          child: Text(
+                              ProfileLabels.getLabel(getCurrentLanguage(), 'Edit')),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'remove',
+                          child: Text(
+                              ProfileLabels.getLabel(getCurrentLanguage(), 'Remove')),
+                        ),
+                      ],
+                    ).then((value) async{
+                      if (value == 'edit') {
+                        print("Edit selected");
+                      } else if (value == 'remove') {
+                        if (!authRemoveChecked) {
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => LockScreen(
+                                isAuthCheck: true,
+                                isLockSetup: false,
+                              ),
+                            ),
+                          );
+
+                          if (result == true) {
+                            authRemoveChecked = true;
+                            print("Access Granted!");
+                          } else {
+                            authRemoveChecked = false;
+                            print("Access Denied.");
+                          }
+                        }
+                        if (authRemoveChecked) {
+                          removePaymentCard(card);
+                          setState((){
+
+                          });
+                        }
+
+                      }
+                    });
+                  },
+                  child: const Icon(
+                    Icons.more_vert,
+                    color: Colors.white70,
                   ),
-                  SizedBox(
-                    width: 10,
-                  ),
-      GestureDetector(
-        onTapDown: (TapDownDetails details) {
-          final tapPosition = details.globalPosition;
-          final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-          showMenu<String>(
-            context: context,
-            position: RelativeRect.fromRect(
-              tapPosition & const Size(40, 40), // the position & size of the tap area
-              Offset.zero & overlay.size,       // area of the screen
+                ),
+              ],
             ),
-            items: [
-              const PopupMenuItem<String>(
-                value: 'edit',
-                child: Text('Edit'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'remove',
-                child: Text('Remove'),
-              ),
-            ],
-          ).then((value) {
-            if (value == 'edit') {
-              // Handle edit action here.
-              print("Edit selected");
-            } else if (value == 'remove') {
-              // Handle remove action here.
-
-            }
-          });
-        },
-        child: const Icon(
-          Icons.more_vert,
-          color: Colors.white70,
-        ),
-      )
-
-      ],
-              ),
-          )
+          ),
         ],
       ),
     );
-  }
-}
+  }}
 
 
 
@@ -327,10 +436,7 @@ class _AddCardDialogState extends State<AddCardDialog> {
       setState(() => errorText = 'CVC must be exactly 3 digits.');
       return;
     }
-    if (balanceText.isEmpty || double.tryParse(balanceText) == null) {
-      setState(() => errorText = 'Balance must be a valid number.');
-      return;
-    }
+
     if (_selectedCardType == null) {
       setState(() => errorText = 'Please select a card type.');
       return;
@@ -375,7 +481,16 @@ class _AddCardDialogState extends State<AddCardDialog> {
       ),
     );
   }
+  String getCurrentLanguage()  {
+    // Ensure that the Hive box is open. If already open, this returns the box immediately.
+    final Box<Settings> settingsBox = Hive.box<Settings>('settingsBox');
 
+    // Retrieve stored settings or use default settings if none are stored.
+    final Settings settings = settingsBox.get('userSettings', defaultValue: Settings.defaultSettings)!;
+
+    // Return the current language as an enum.
+    return  settings.language;
+  }
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -386,11 +501,11 @@ class _AddCardDialogState extends State<AddCardDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Add New Card', style: Theme.of(context).textTheme.headlineMedium),
+              Text(ProfileLabels.getLabel(getCurrentLanguage(), 'Add New Card'), style: Theme.of(context).textTheme.headlineMedium),
               SizedBox(height: 10),
               DropdownButtonFormField<CardType>(
                 decoration: InputDecoration(
-                  labelText: 'Card Type',
+                  labelText: ProfileLabels.getLabel(getCurrentLanguage(), 'Card Type'),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   filled: true,
                   fillColor: Colors.grey[100],
@@ -415,7 +530,7 @@ class _AddCardDialogState extends State<AddCardDialog> {
                 },
               ),
               _buildTextField(
-                label: 'Card Number',
+                label: ProfileLabels.getLabel(getCurrentLanguage(), 'Card Number'),
                 controller: _cardNumberController,
                 keyboardType: TextInputType.number,
                 hintText: '1234 5678 9012 3456',
@@ -446,13 +561,7 @@ class _AddCardDialogState extends State<AddCardDialog> {
                   LengthLimitingTextInputFormatter(3),
                 ],
               ),
-              _buildTextField(
-                label: 'Balance',
-                controller: _balanceController,
-                keyboardType: TextInputType.number,
-                hintText: '1000',
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              ),
+
               if (errorText != null) ...[
                 SizedBox(height: 10),
                 Text(errorText!, style: TextStyle(color: Colors.red)),
@@ -463,11 +572,11 @@ class _AddCardDialogState extends State<AddCardDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text('Cancel'),
+                    child: Text(ProfileLabels.getLabel(getCurrentLanguage(), 'Cancel')),
                   ),
                   ElevatedButton(
                     onPressed: _saveCard,
-                    child: Text('Save'),
+                    child: Text(ProfileLabels.getLabel(getCurrentLanguage(), 'Save')),
                   ),
                 ],
               ),
